@@ -6,24 +6,25 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from PIL import Image
+from scipy.io import savemat
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-import model
 from dataset import BaseDataset
+from model import FeatNet, MaskNet, Maxout_feature, FaceModel
 
 
 class LoadConfig(object):
     def __init__(self):
         self.dataset_path = 'E:/dataset'
-        self.dataset = 'UniNet-test'
+        self.dataset = 'CASIA-Iris-Lamp'
         self.model = 'UniNet_CASIA'
 
         self.mode = 'test'
-        self.save = 'pic'
+        self.save = 'mat'
 
-        self.batch_size = 1
-        self.device = "cpu"
+        self.batch_size = 8
+        self.device = "cuda:0"
         self.num_workers = 4
 
         self._change_cfg()
@@ -68,11 +69,11 @@ def extraction(cfg):
         dataset, cfg.batch_size, shuffle=False, num_workers=cfg.num_workers)
 
     if cfg.model_type == 'UniNet':
-        featnet = model.FeatNet()
+        featnet = FeatNet()
         featnet.load_state_dict(
             torch.load(cfg.featnet_path, map_location=device))
         featnet.to(device)
-        masknet = model.MaskNet()
+        masknet = MaskNet()
         masknet.load_state_dict(
             torch.load(cfg.masknet_path, map_location=device))
         masknet.to(device)
@@ -86,9 +87,8 @@ def extraction(cfg):
             features = np.zeros((len(dataset), 64, 512))
             masks = np.zeros((len(dataset), 3, 64, 512))
             didx = -1
-            for didx, (img_batch, label_batch, label_vec_batch,
-                       img_name_batch) in tqdm(
-                           enumerate(data_loader), ncols=80, ascii=True):
+            for img_batch, label_batch, label_vec_batch, img_name_batch in tqdm(data_loader, ncols=80, ascii=True):
+                didx += 1
                 img_batch = img_batch.to(device)
                 feature_batch = featnet(img_batch)
                 mask_batch = masknet(img_batch)
@@ -104,9 +104,9 @@ def extraction(cfg):
 
     else:
         if cfg.model_type == 'maxout-feature':
-            model = model.Maxout_feature()
+            model = Maxout_feature()
         elif cfg.model_type == 'facenet':
-            model = model.FaceModel(256)
+            model = FaceModel(256)
         model.load_state_dict(torch.load(cfg.model_path, map_location=device))
         model.to(device)
 
@@ -118,9 +118,9 @@ def extraction(cfg):
             features = np.zeros((len(dataset), 64, 512))
             masks = np.ones((len(dataset), 3, 64, 512))
             didx = -1
-            for didx, (img_batch, label_batch, label_vec_batch,
-                       img_name_batch) in tqdm(
-                           enumerate(data_loader), ncols=80, ascii=True):
+            for img_batch, label_batch, label_vec_batch, img_name_batch in tqdm(
+                    data_loader, ncols=80, ascii=True):
+                didx += 1
                 img_batch = img_batch.to(device)
                 feature_batch = model(img_batch)
                 for idx in range(feature_batch.shape[0]):
@@ -130,29 +130,29 @@ def extraction(cfg):
                     features[idx +
                              didx, :, :] = feature_batch[idx].cpu().numpy()
 
-        if cfg.save == 'pth':
-            ft_path = 'feature/{}__{}.pth'.format(cfg.model, cfg.dataset)
-            ft_load = {
-                'features': features,
-                'masks': masks,
-                'labels_vec': labels_vec,
-                'labels': labels
-            }
-            torch.save(ft_load, ft_path)
-        elif cfg.save == 'pic':
-            if not os.path.exists('feature/{}__{}'.format(
-                    cfg.model, cfg.dataset)):
-                os.makedirs('feature/{}__{}'.format(cfg.model, cfg.dataset))
-            for idx in range(len(dataset)):
-                feature_img = features[idx, :, :]
-                feature_img = (feature_img - feature_img.min()) / (
+    if cfg.save == 'mat':
+        ft_path = 'feature/{}__{}.mat'.format(cfg.model, cfg.dataset)
+        ft_load = {
+            'features': features,
+            'masks': masks,
+            'labels_vec': labels_vec,
+            'labels': labels
+        }
+        savemat(ft_path, ft_load)
+    elif cfg.save == 'pic':
+        if not os.path.exists('feature/{}__{}'.format(
+                cfg.model, cfg.dataset)):
+            os.makedirs('feature/{}__{}'.format(cfg.model, cfg.dataset))
+        for idx in range(len(dataset)):
+            feature_img = features[idx, :, :]
+            feature_img = (feature_img - feature_img.min()) / (
                     feature_img.max() - feature_img.min())
-                Image.fromarray(feature_img * 255).convert('L').save(
-                    'feature/{}__{}/{}_feature.png'.format(
-                        cfg.model, cfg.dataset, img_names[idx]))
-                Image.fromarray(masks[idx, 2, :, :] * 255).convert('L').save(
-                    'feature/{}__{}/{}_mask.png'.format(
-                        cfg.model, cfg.dataset, img_names[idx]))
+            Image.fromarray(feature_img * 255).convert('L').save(
+                'feature/{}__{}/{}_feature.png'.format(
+                    cfg.model, cfg.dataset, img_names[idx]))
+            Image.fromarray(masks[idx, 2, :, :] * 255).convert('L').save(
+                'feature/{}__{}/{}_mask.png'.format(
+                    cfg.model, cfg.dataset, img_names[idx]))
 
     return features, masks, labels, labels_vec
 

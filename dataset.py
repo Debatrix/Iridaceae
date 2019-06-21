@@ -22,7 +22,8 @@ class BaseDataset(data.Dataset):
             ]
             label_list = sorted(list(set([item[1] for item in self.img_list])))
 
-        np.random.shuffle(self.img_list)
+        if mode == 'train':
+            np.random.shuffle(self.img_list)
         self.label_list = sorted(label_list)
 
         self.enc = LabelBinarizer()
