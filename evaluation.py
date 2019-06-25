@@ -52,9 +52,9 @@ def cal_DET(features, labels):
         features = normalize(features)
         sim = np.dot(features, features.T)
     num = len(labels)
-    sim = np.delete(np.reshape(sim, (1, -1)), [x * x for x in range(num)])
+    sim = sim[~np.eye(num, dtype=np.bool)]
     bool = np.dot(labels, labels.T)
-    bool = np.delete(np.reshape(bool, (1, -1)), [x * x for x in range(num)])
+    bool = bool[~np.eye(num, dtype=np.bool)]
 
     fpr, tpr, thresholds = metrics.roc_curve(bool, sim)
     fnr = 1 - tpr
